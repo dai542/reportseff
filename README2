@@ -8,3 +8,6 @@ $ conda create --name rseff-env python=3.11 -y
 $ conda activate rseff-env
 (rseff-env) $ pip install reportseff
 (rseff-env) $ reportseff --help
+
+
+https://jhpce.jhu.edu/slurm/tips-reportseff/
