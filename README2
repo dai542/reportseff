@@ -1,0 +1,10 @@
+Using at Princeton
+
+To use reportseff on a Research Computing cluster like Della, run these commands:
+
+$ ssh <YourNetID>@della.princeton.edu
+$ module load anaconda3/2024.2
+$ conda create --name rseff-env python=3.11 -y
+$ conda activate rseff-env
+(rseff-env) $ pip install reportseff
+(rseff-env) $ reportseff --help
