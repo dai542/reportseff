@@ -79,6 +79,14 @@ class BaseInquirer(ABC):
         """
 
     @abstractmethod
+    def set_cluster(self, cluster: str) -> None:
+        """Set the collection of jobs based on the provided cluster.
+
+        Args:
+            cluster: cluster name
+        """
+
+    @abstractmethod
     def set_extra_args(self, extra_args: str) -> None:
         """Set extra arguments to be forwarded to sacct.
 
@@ -165,6 +173,7 @@ class SacctInquirer(BaseInquirer):
         self.until: str | None = None
         self.query_all_users: bool = False
         self.partition: str | None = None
+        self.cluster: str | None = None
         self.extra_args: str | None = None
 
     def get_valid_formats(self) -> list[str]:
@@ -215,6 +224,8 @@ class SacctInquirer(BaseInquirer):
             args += [f"--starttime={self.since}"]
         if self.partition:
             args += [f"--partition={self.partition}"]
+        if self.cluster:
+            args += [f"--cluster={self.cluster}"]
         if self.until:
             args += [f"--endtime={self.until}"]
         if self.extra_args:
@@ -266,13 +277,26 @@ class SacctInquirer(BaseInquirer):
         sacct_split = re.compile(r"\^\|\^")
         result = [dict(zip(columns, sacct_split.split(line))) for line in lines if line]
 
-        if self.state:
-            # split to get first word in entries like "CANCELLED BY X"
-            result = [r for r in result if r["State"].split()[0] in self.state]
+        # Sometimes the main job has a different state than the sub jobs
+        # e.g. timeouts have a state of canceled for the batch jobs.
+        # When state filtering is active, need to filter main ids, then retain
+        # only the jobs with matching job ids
+        if self.state or self.not_state:
+            main_jobs = [r for r in result if "." not in r["JobID"]]
+            if self.state:
+                # split to get first word in entries like "CANCELLED BY X"
+                main_jobs = [
+                    r for r in main_jobs if r["State"].split()[0] in self.state
+                ]
 
-        if self.not_state:
-            # split to get first word in entries like "CANCELLED BY X"
-            result = [r for r in result if r["State"].split()[0] not in self.not_state]
+            if self.not_state:
+                # split to get first word in entries like "CANCELLED BY X"
+                main_jobs = [
+                    r for r in main_jobs if r["State"].split()[0] not in self.not_state
+                ]
+
+            main_job_ids = {r["JobID"] for r in main_jobs}
+            result = [r for r in result if r["JobID"].split(".")[0] in main_job_ids]
 
         return result
 
@@ -291,6 +315,14 @@ class SacctInquirer(BaseInquirer):
             partition: partition name
         """
         self.partition = partition
+
+    def set_cluster(self, cluster: str) -> None:
+        """Set the specific cluster in multi-cluster environment.
+
+        Args:
+            cluster: cluster name
+        """
+        self.cluster = cluster
 
     def set_extra_args(self, extra_args: str) -> None:
         """Set extra arguments to be forwarded to sacct.
@@ -425,7 +457,11 @@ class SacctInquirer(BaseInquirer):
         Raises:
             RuntimeError: if scontrol raises an error
         """
-        command_args = "scontrol show partition".split()
+        args = ""
+        if self.cluster:
+            args = f"--cluster {self.cluster}"
+
+        command_args = f"scontrol {args} show partition".split()
         cmd_result = subprocess.run(
             args=command_args,
             stdout=subprocess.PIPE,
